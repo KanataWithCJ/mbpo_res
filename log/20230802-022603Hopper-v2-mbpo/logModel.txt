@@ -1,0 +1,1 @@
+2023-08-02 02:26:03,419 [root::INFO] Results stored in {main_path}
