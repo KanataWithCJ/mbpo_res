@@ -1,3 +1,0 @@
-2023-08-02 02:27:58,946 [root::INFO] Results stored in {main_path}
-2023-08-02 03:20:40,841 [root::INFO] Step Reward: 1000 93.03119621790748
-2023-08-02 05:06:43,266 [root::INFO] Step Reward: 2000 56.70785732695201

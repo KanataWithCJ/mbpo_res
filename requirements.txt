@@ -81,3 +81,6 @@ Werkzeug==2.3.6
 wrapt==1.15.0
 yarg==0.1.9
 zipp==3.16.2
+
+python main_mbpo.py --model_train_freq 25 --num_epoch 300 --rollout_batch_size 1000 --epoch_length 100
+python main_mbpo.py --num_epoch 300 --model_type "pytorch" --env_name "Hopper-v2" --seed 1 --cuda "cuda:0" --use_residual

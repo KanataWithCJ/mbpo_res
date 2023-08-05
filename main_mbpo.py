@@ -6,6 +6,7 @@ import numpy as np
 from itertools import count
 
 import logging
+import wandb
 
 import os
 import os.path as osp
@@ -101,10 +102,10 @@ def readParser():
     parser.add_argument('--model_type', default='pytorch', metavar='A',
                         help='predict model -- pytorch or tensorflow')
 
-    parser.add_argument('--cuda', default='cuda:0',metavar='A',
+    parser.add_argument('--cuda',type=str, default='cuda:0',
                         help='run on CUDA (default: True)')
     parser.add_argument('--use_residual',default=False,action='store_true',help="use residual policy(default False)")
-    parser.add_argument('--ratio_residual',type=float,default=0.5)
+    parser.add_argument('--ratio_residual',type=float,default=0.8)
     return parser.parse_args()
 
 
@@ -126,17 +127,35 @@ def train(args, env_sampler, predict_env,predict_bias, agent,residual_agent, env
     reward_sum = 0
     rollout_length = 1
     exploration_before_start(args,env_sampler,env_pool,agent)
+# train_predict_model(args, env_pool, predict_env)
     # Init logs
     base_path = 'log'
-    folder_name = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
-    if args.use_residual:
-        main_path = os.path.join(base_path, folder_name+args.env_name+"-mbpo_res")
-    else:
-        main_path = os.path.join(base_path, folder_name+args.env_name+"-mbpo")
+    # folder_name = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
+    algo_folder_name = f"{args.env_name}-epn{args.num_epoch}-epl{args.epoch_length}-res{args.use_residual}-resr{args.ratio_residual}"
+    sub_folder_name = f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-seed{args.seed}"
+    main_path = os.path.join(base_path, algo_folder_name)
+    main_path = os.path.join(main_path, sub_folder_name)
     os.makedirs(main_path)
 
     init_log(main_path,'INFO')
     reward_history = []
+
+    wandb.init(
+        project=f"{args.env_name}-epn{args.num_epoch}-epl{args.epoch_length}",
+    # track hyperparameters and run metadata
+        config={
+        "env_name": args.env_name,
+        "num_epoch": args.num_epoch,
+        "epoch_length": args.epoch_length,
+        "use_residual": args.use_residual,
+        "ratio_residual": args.ratio_residual,
+        "seed": args.seed
+        },
+        name=f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-seed{args.seed}",
+        dir=main_path
+    )
+
+
     for epoch_step in range(args.num_epoch):
         start_step = total_step
         train_policy_steps = 0
@@ -151,8 +170,8 @@ def train(args, env_sampler, predict_env,predict_bias, agent,residual_agent, env
                 if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
                     train_predict_model(args, env_pool, predict_env)
                     if args.use_residual:
-                        train_bias_model(args,env_pool,predict_bias,predict_env)
-                        train_residual_policy(args,total_step,train_policy_steps,cur_step,env_pool,model_pool,residual_agent,predict_bias)
+                        # train_bias_model(args,env_pool,predict_bias,predict_env)
+                        train_residual_policy(args,total_step,train_policy_steps,cur_step,env_pool,model_pool,residual_agent,predict_env,agent)
                     new_rollout_length = set_rollout_length(args, epoch_step)
                     if rollout_length != new_rollout_length:
                         rollout_length = new_rollout_length
@@ -188,13 +207,15 @@ def train(args, env_sampler, predict_env,predict_bias, agent,residual_agent, env
                     # logger.record_tabular("sum_reward", sum_reward)
                     # logger.dump_tabular()
                     logging.info("Step Reward: " + str(total_step) + " " + str(sum_reward))
-                    reward_history.append(sum_reward)
+                    wandb.log({"total_step":total_step, "sum_reward":sum_reward,"rollout_length":rollout_length})
+                    # reward_history.append(sum_reward)
                     # print(total_step, sum_reward)
-                    targetData = {'reward':np.array(reward_history)}
-                    df = pd.DataFrame(targetData)
-                    training_data_path = os.path.join(main_path,
-                                                    'log.csv')
-                    df.to_csv(training_data_path, index=False)    
+                    # targetData = {'reward':np.array(reward_history)}
+                    # df = pd.DataFrame(targetData)
+                    # training_data_path = os.path.join(main_path,
+                                                    # 'log.csv')
+                    # df.to_csv(training_data_path, index=False)    
+    wandb.finish()            
 
 def exploration_before_start(args, env_sampler, env_pool, agent):
     with tqdm(total=args.init_exploration_steps) as pbar:
@@ -252,43 +273,54 @@ def resize_model_pool(args, rollout_length, model_pool):
 
     
 def rollout_model(args, predict_env, agent,residual_agent, model_pool, env_pool, rollout_length):
-    if args.use_residual:
-        residual_rollout_batch_size = int(args.ratio_residual*args.rollout_batch_size)
-        policy_rollout_batch_size = args.rollout_batch_size - residual_rollout_batch_size
-        p_state, p_action, p_reward, p_next_state, p_done = env_pool.sample_all_batch(policy_rollout_batch_size)
-        r_state, r_action, r_reward, r_next_state, r_done = env_pool.sample_all_batch(residual_rollout_batch_size)
-    else:
-        state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
-    for i in range(rollout_length):
-        # TODO: Get a batch of actions
+    # if args.use_residual:
+    #     residual_rollout_batch_size = int(args.ratio_residual*args.rollout_batch_size)
+    #     policy_rollout_batch_size = args.rollout_batch_size - residual_rollout_batch_size
+    #     p_state, p_action, p_reward, p_next_state, p_done = env_pool.sample_all_batch(policy_rollout_batch_size)
+    #     r_state, r_action, r_reward, r_next_state, r_done = env_pool.sample_all_batch(residual_rollout_batch_size)
+    # else:
+    #     state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
+    # for i in range(rollout_length):
+    #     # TODO: Get a batch of actions
         
-        if args.use_residual:
-            policy_action = agent.select_action(p_state)
-            residual_action = residual_agent.select_action(r_state)
+    #     if args.use_residual:
+    #         policy_action = agent.select_action(p_state)
+    #         residual_action = residual_agent.select_action(r_state)
 
-            p_next_states, p_rewards, p_terminals, p_info = predict_env.step(p_state, policy_action)
-            model_pool.push_batch([(p_state[j], p_action[j], p_rewards[j], p_next_states[j], p_terminals[j]) for j in range(p_state.shape[0])])
-            r_next_states, r_rewards, r_terminals, r_info = predict_env.step(r_state, residual_action)
-            model_pool.push_batch([(r_state[j], r_action[j], r_rewards[j], r_next_states[j], r_terminals[j]) for j in range(r_state.shape[0])])
+    #         p_next_states, p_rewards, p_terminals, p_info = predict_env.step(p_state, policy_action)
+    #         model_pool.push_batch([(p_state[j], p_action[j], p_rewards[j], p_next_states[j], p_terminals[j]) for j in range(p_state.shape[0])])
+    #         r_next_states, r_rewards, r_terminals, r_info = predict_env.step(r_state, residual_action)
+    #         model_pool.push_batch([(r_state[j], r_action[j], r_rewards[j], r_next_states[j], r_terminals[j]) for j in range(r_state.shape[0])])
             
-            p_nonterm_mask = ~p_terminals.squeeze(-1)
-            if p_nonterm_mask.sum() == 0:
-                break
-            p_state = p_next_states[p_nonterm_mask]
+    #         p_nonterm_mask = ~p_terminals.squeeze(-1)
+    #         if p_nonterm_mask.sum() == 0:
+    #             break
+    #         p_state = p_next_states[p_nonterm_mask]
 
-            r_nonterm_mask = ~r_terminals.squeeze(-1)
-            if r_nonterm_mask.sum() == 0:
-                break
-            r_state = r_next_states[r_nonterm_mask]
-        else:
-            action = agent.select_action(state)
-            next_states, rewards, terminals, info = predict_env.step(state, action)
-            model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
-            nonterm_mask = ~terminals.squeeze(-1)
-            if nonterm_mask.sum() == 0:
-                break
-            state = next_states[nonterm_mask]
-
+    #         r_nonterm_mask = ~r_terminals.squeeze(-1)
+    #         if r_nonterm_mask.sum() == 0:
+    #             break
+    #         r_state = r_next_states[r_nonterm_mask]
+    #     else:
+    #         action = agent.select_action(state)
+    #         next_states, rewards, terminals, info = predict_env.step(state, action)
+    #         model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
+    #         nonterm_mask = ~terminals.squeeze(-1)
+    #         if nonterm_mask.sum() == 0:
+    #             break
+    #         state = next_states[nonterm_mask]
+    state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
+    for i in range(rollout_length):
+        action = agent.select_action(state)
+        if args.use_residual:
+            action = residual_agent.select_action(state)
+            # action = args.ratio_residual*action + (1-args.ratio_residual)*residual_action
+        next_states, rewards, terminals, info = predict_env.step(state, action)
+        model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
+        nonterm_mask = ~terminals.squeeze(-1)
+        if nonterm_mask.sum() == 0:
+            break
+        state = next_states[nonterm_mask]
 
 def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent):
     if total_step % args.train_every_n_steps > 0:
@@ -321,11 +353,23 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
 
     return args.num_train_repeat
 
-def train_residual_policy(args, total_step, train_step, cur_step, env_pool, model_pool, residual_agent,predict_bias):
+def train_residual_policy_with_bias(args, total_step, train_step, cur_step, env_pool, model_pool, residual_agent,predict_bias):
     for i in range(args.num_train_repeat):
         batch_state, batch_action, batch_reward, batch_next_state, batch_done = env_pool.sample(int(args.policy_train_batch_size))
         batch_bias_state,batch_bias_reward,_,_ = predict_bias.step(batch_state,batch_action)
         batch_reward = -((batch_bias_state**2).mean(-1) + args.beta * (batch_bias_reward.squeeze()**2).mean(-1))
+        batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
+        batch_done = (~batch_done).astype(int)
+        residual_agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, i)
+
+def train_residual_policy(args, total_step, train_step, cur_step, env_pool, model_pool, residual_agent,predict_env,agent):
+    for i in range(args.num_train_repeat):
+        batch_state, batch_action, batch_reward, batch_next_state, batch_done = env_pool.sample(int(args.policy_train_batch_size))
+        batch_predict_state,batch_predict_reward,_,_ = predict_env.step(batch_state,batch_action)
+        batch_res_action = residual_agent.select_action(batch_state)
+        batch_action = agent.select_action(batch_state)
+        batch_reward = -(((batch_predict_state-batch_state)**2).mean(-1) + args.beta * ((batch_predict_reward-batch_reward).squeeze()**2).mean(-1))
+        batch_reward -= ((batch_res_action-batch_action).squeeze()**2).mean(-1)
         batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
         batch_done = (~batch_done).astype(int)
         residual_agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, i)
@@ -363,6 +407,8 @@ def main(args=None):
     env = gym.make(args.env_name)
 
     # Set random seed
+    torch.cuda.set_device(int(args.cuda[-1]))# 设置默认的设备为GPU
+    torch.cuda.manual_seed(args.seed) 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     env.seed(args.seed)

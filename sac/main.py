@@ -82,7 +82,7 @@ for i_episode in itertools.count(1):
         if len(memory) > args.batch_size:
             # Number of updates per step in environment
             for i in range(args.updates_per_step):
-                # Update parameters of all the networks
+                # Update parameters of all the networkspython main_mbpo.py --model_train_freq 25 --num_epoch 300 --rollout_batch_size 1000 --epoch_length 100
                 critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
 
                 writer.add_scalar('loss/critic_1', critic_1_loss, updates)

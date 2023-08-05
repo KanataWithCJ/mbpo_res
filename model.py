@@ -9,7 +9,7 @@ import math
 import gzip
 import itertools
 
-device = torch.device('cuda:2')
+# device = torch.device('cuda:1')
 
 num_train = 60000  # 60k train examples
 num_test = 10000  # 10k test examples
@@ -291,7 +291,7 @@ class EnsembleDynamicsModel():
 class Swish(nn.Module):
     def __init__(self):
         super(Swish, self).__init__()
-
+        # self.device = torch.device(args.cuda)
     def forward(self, x):
         x = x * F.sigmoid(x)
         return x
@@ -312,7 +312,7 @@ def get_data(inputs_file_path, labels_file_path, num_examples):
     return np.array(inputs, dtype=np.float32), np.array(labels, dtype=np.int8)
 
 
-def set_tf_weights(model, tf_weights):
+def set_tf_weights(model, tf_weights,device):
     print(tf_weights.keys())
     pth_weights = {}
     pth_weights['max_logvar'] = tf_weights['BNN/max_log_var:0']
