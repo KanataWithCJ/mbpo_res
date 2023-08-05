@@ -1,0 +1,48 @@
+wandb_version: 1
+
+env_name:
+  desc: null
+  value: Hopper-v2
+num_epoch:
+  desc: null
+  value: 300
+epoch_length:
+  desc: null
+  value: 1000
+use_residual:
+  desc: null
+  value: true
+ratio_residual:
+  desc: null
+  value: 0.2
+seed:
+  desc: null
+  value: 1
+_wandb:
+  desc: null
+  value:
+    python_version: 3.8.17
+    cli_version: 0.15.8
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1691223887.04237
+    t:
+      1:
+      - 1
+      - 2
+      - 3
+      - 55
+      2:
+      - 1
+      - 2
+      - 3
+      - 55
+      3:
+      - 13
+      - 16
+      - 23
+      4: 3.8.17
+      5: 0.15.8
+      8:
+      - 5

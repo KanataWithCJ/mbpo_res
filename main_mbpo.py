@@ -104,8 +104,8 @@ def readParser():
 
     parser.add_argument('--cuda',type=str, default='cuda:0',
                         help='run on CUDA (default: True)')
-    parser.add_argument('--use_residual',default=False,action='store_true',help="use residual policy(default False)")
-    parser.add_argument('--ratio_residual',type=float,default=0.8)
+    parser.add_argument('--use_residual',default=True,action='store_true',help="use residual policy(default False)")
+    parser.add_argument('--ratio_residual',type=float,default=1.0)
     return parser.parse_args()
 
 
@@ -151,7 +151,7 @@ def train(args, env_sampler, predict_env,predict_bias, agent,residual_agent, env
         "ratio_residual": args.ratio_residual,
         "seed": args.seed
         },
-        name=f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-seed{args.seed}",
+        name=f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-seed{args.seed}-res{args.ratio_residual}",
         dir=main_path
     )
 
@@ -313,8 +313,8 @@ def rollout_model(args, predict_env, agent,residual_agent, model_pool, env_pool,
     for i in range(rollout_length):
         action = agent.select_action(state)
         if args.use_residual:
-            action = residual_agent.select_action(state)
-            # action = args.ratio_residual*action + (1-args.ratio_residual)*residual_action
+            residual_action = residual_agent.select_action(state)
+            action = args.ratio_residual*action + (1-args.ratio_residual)*residual_action
         next_states, rewards, terminals, info = predict_env.step(state, action)
         model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
@@ -368,8 +368,9 @@ def train_residual_policy(args, total_step, train_step, cur_step, env_pool, mode
         batch_predict_state,batch_predict_reward,_,_ = predict_env.step(batch_state,batch_action)
         batch_res_action = residual_agent.select_action(batch_state)
         batch_action = agent.select_action(batch_state)
-        batch_reward = -(((batch_predict_state-batch_state)**2).mean(-1) + args.beta * ((batch_predict_reward-batch_reward).squeeze()**2).mean(-1))
-        batch_reward -= ((batch_res_action-batch_action).squeeze()**2).mean(-1)
+        batch_reward = -((batch_predict_state-batch_state)**2).mean(-1) + args.beta * ((batch_predict_reward-batch_reward).squeeze()**2).mean(-1)
+        if args.ratio_residual == 0.0:
+            batch_reward -= ((batch_res_action-batch_action).squeeze()**2).sum(0).sqrt().mean(-1)
         batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
         batch_done = (~batch_done).astype(int)
         residual_agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, i)
